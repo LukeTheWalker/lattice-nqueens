@@ -21,6 +21,8 @@ int main(int argc, char *argv[]){
     auto u = data.get_u();
     auto n = data.get_n();
 
+    for (size_t i = 0; i < n; i++) u[i] = u[i] + 1;
+
     cout << "Number of variables = " << n << endl;
 
     auto start = chrono::high_resolution_clock::now();
