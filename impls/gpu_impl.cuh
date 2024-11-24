@@ -41,8 +41,6 @@ size_t pne_gpu(int **C, int *u, int n) {
     cudaError_t err;
     cudaEvent_t wait_event;
 
-    err = cudaEventCreate(&wait_event); cuda_err_check(err, __FILE__, __LINE__);
-
     cudaStream_t *stream_level;
 
     err = cudaMallocHost(&stream_level, n * sizeof(cudaStream_t)); cuda_err_check(err, __FILE__, __LINE__);
@@ -60,11 +58,10 @@ size_t pne_gpu(int **C, int *u, int n) {
 
     if (DEBUG) cerr << "Level sizes created" << endl;
 
-    size_t h_active_nodes_in_first_level, *d_active_nodes_in_level;
-    h_active_nodes_in_first_level = u[0];
+    size_t *d_active_nodes_in_level;
     err = cudaMallocAsync(&d_active_nodes_in_level, n * sizeof(size_t), stream_level[0]); cuda_err_check(err, __FILE__, __LINE__);
     err = cudaMemsetAsync(d_active_nodes_in_level, 0, n * sizeof(size_t), stream_level[0]); cuda_err_check(err, __FILE__, __LINE__);
-    err = cudaMemcpyAsync(&d_active_nodes_in_level[0], &h_active_nodes_in_first_level, sizeof(size_t), cudaMemcpyHostToDevice, stream_level[0]); cuda_err_check(err, __FILE__, __LINE__);
+    err = cudaMemsetAsync(&d_active_nodes_in_level[0], u[0], sizeof(size_t), stream_level[0]); cuda_err_check(err, __FILE__, __LINE__);
 
     if (DEBUG) cerr << "Active nodes in level created" << endl;
 
@@ -96,11 +93,15 @@ size_t pne_gpu(int **C, int *u, int n) {
     if (DEBUG) cerr << "Upper bounds transferred" << endl;
 
     constexpr size_t block_size = 256;
-    size_t currently_active_nodes = u[0];
+    size_t * currently_active_nodes;
+    err = cudaMallocHost(&currently_active_nodes, sizeof(size_t)); cuda_err_check(err, __FILE__, __LINE__);
+    *currently_active_nodes = u[0];
+
+    err = cudaEventCreate(&wait_event); cuda_err_check(err, __FILE__, __LINE__);
 
     for (size_t current_level = 1; current_level < n; current_level++) {
         if (DEBUG) cerr << "Current level: " << current_level << " with " << currently_active_nodes << " active nodes" << endl;
-        int grid_size = (currently_active_nodes + block_size - 1) / block_size;
+        int grid_size = (*currently_active_nodes + block_size - 1) / block_size;
         if (grid_size == 0) break;
         err = cudaMallocAsync(&h_levels[current_level], h_level_sizes[current_level] * sizeof(pii), stream_level[current_level]); cuda_err_check(err, __FILE__, __LINE__);
         err = cudaMemcpyAsync(d_levels+current_level, h_levels+current_level, sizeof(pii*), cudaMemcpyHostToDevice, stream_level[current_level]); cuda_err_check(err, __FILE__, __LINE__);
@@ -108,15 +109,14 @@ size_t pne_gpu(int **C, int *u, int n) {
         err = cudaEventRecord(wait_event, stream_level[current_level-1]); cuda_err_check(err, __FILE__, __LINE__);
         err = cudaStreamWaitEvent(stream_level[current_level], wait_event, 0); cuda_err_check(err, __FILE__, __LINE__);
 
-        err = cudaDeviceSynchronize(); cuda_err_check(err, __FILE__, __LINE__);
-
         kernel_pne_seq<<<grid_size, block_size, 0, stream_level[current_level]>>>(d_C, d_u, n, d_level_sizes, d_active_nodes_in_level, d_levels, current_level);
 
-        err = cudaDeviceSynchronize(); cuda_err_check(err, __FILE__, __LINE__);
-        err = cudaGetLastError(); cuda_err_check(err, __FILE__, __LINE__);
-
-        err = cudaMemcpyAsync(&currently_active_nodes, &d_active_nodes_in_level[current_level], sizeof(size_t), cudaMemcpyDeviceToHost, stream_level[current_level]); cuda_err_check(err, __FILE__, __LINE__);
+        err = cudaMemcpyAsync(currently_active_nodes, &d_active_nodes_in_level[current_level], sizeof(size_t), cudaMemcpyDeviceToHost, stream_level[current_level]); cuda_err_check(err, __FILE__, __LINE__);
     }
+
+    size_t result;
+
+    err = cudaMemcpyAsync(&result, d_active_nodes_in_level+n-1, sizeof(size_t), cudaMemcpyDeviceToHost, stream_level[n-1]); cuda_err_check(err, __FILE__, __LINE__);
 
     err = cudaFreeAsync(d_level_sizes, stream_level[n-1]); cuda_err_check(err, __FILE__, __LINE__);
     err = cudaFreeAsync(d_active_nodes_in_level, stream_level[n-1]); cuda_err_check(err, __FILE__, __LINE__);
@@ -127,6 +127,7 @@ size_t pne_gpu(int **C, int *u, int n) {
     err = cudaFreeAsync(d_C, stream_level[n-1]); cuda_err_check(err, __FILE__, __LINE__);
     err = cudaFreeAsync(d_u, stream_level[n-1]); cuda_err_check(err, __FILE__, __LINE__);
 
+    err = cudaFreeHost(currently_active_nodes); cuda_err_check(err, __FILE__, __LINE__);
     err = cudaFreeHost(h_level_sizes); cuda_err_check(err, __FILE__, __LINE__);
     err = cudaFreeHost(h_firs_level); cuda_err_check(err, __FILE__, __LINE__);
     err = cudaFreeHost(h_levels); cuda_err_check(err, __FILE__, __LINE__);
@@ -142,5 +143,5 @@ size_t pne_gpu(int **C, int *u, int n) {
 
     if (DEBUG) cerr << "Kernel execution completed" << " with " << currently_active_nodes << " active nodes" << endl;
 
-    return currently_active_nodes;
+    return result;
 }
