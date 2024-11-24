@@ -58,5 +58,9 @@ size_t pne_seq(int ** C, int * u, int n){
         }
     }
 
+    delete[] level_sizes;
+    for (size_t i = 0; i < n; i++) delete[] levels[i];
+    delete[] levels;
+
     return active_nodes_in_level[n-1];
 }

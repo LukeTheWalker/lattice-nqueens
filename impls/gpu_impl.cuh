@@ -39,95 +39,108 @@ __global__ void kernel_pne_seq(int *C, int *u, int n, size_t *level_sizes, size_
 
 size_t pne_gpu(int **C, int *u, int n) {
     cudaError_t err;
+    cudaEvent_t wait_event;
 
-    cudaStream_t data_stream, kernel_stream;
+    err = cudaEventCreate(&wait_event); cuda_err_check(err, __FILE__, __LINE__);
 
-    err = cudaStreamCreate(&data_stream); cuda_err_check(err, __FILE__, __LINE__);
-    err = cudaStreamCreate(&kernel_stream); cuda_err_check(err, __FILE__, __LINE__);
+    cudaStream_t *stream_level;
 
-    if (DEBUG) cout << "Streams created" << endl;
+    err = cudaMallocHost(&stream_level, n * sizeof(cudaStream_t)); cuda_err_check(err, __FILE__, __LINE__);
+    for (size_t i = 0; i < n; i++)
+        err = cudaStreamCreate(&stream_level[i]); cuda_err_check(err, __FILE__, __LINE__);
+
+    if (DEBUG) cerr << "Streams created" << endl;
 
     size_t *h_level_sizes, *d_level_sizes;
     err = cudaMallocHost(&h_level_sizes, n * sizeof(size_t)); cuda_err_check(err, __FILE__, __LINE__);
     h_level_sizes[0] = u[0];
     for (size_t i = 1; i < n; i++) h_level_sizes[i] = u[i] * h_level_sizes[i-1];
-    err = cudaMallocAsync(&d_level_sizes, n * sizeof(size_t), data_stream); cuda_err_check(err, __FILE__, __LINE__);
-    err = cudaMemcpyAsync(d_level_sizes, h_level_sizes, n * sizeof(size_t), cudaMemcpyHostToDevice, data_stream); cuda_err_check(err, __FILE__, __LINE__);
+    err = cudaMallocAsync(&d_level_sizes, n * sizeof(size_t), stream_level[0]); cuda_err_check(err, __FILE__, __LINE__);
+    err = cudaMemcpyAsync(d_level_sizes, h_level_sizes, n * sizeof(size_t), cudaMemcpyHostToDevice, stream_level[0]); cuda_err_check(err, __FILE__, __LINE__);
 
-    if (DEBUG) cout << "Level sizes created" << endl;
+    if (DEBUG) cerr << "Level sizes created" << endl;
 
     size_t h_active_nodes_in_first_level, *d_active_nodes_in_level;
     h_active_nodes_in_first_level = u[0];
-    err = cudaMallocAsync(&d_active_nodes_in_level, n * sizeof(size_t), data_stream); cuda_err_check(err, __FILE__, __LINE__);
-    err = cudaMemsetAsync(d_active_nodes_in_level, 0, n * sizeof(size_t), data_stream); cuda_err_check(err, __FILE__, __LINE__);
-    err = cudaMemcpyAsync(&d_active_nodes_in_level[0], &h_active_nodes_in_first_level, sizeof(size_t), cudaMemcpyHostToDevice, data_stream); cuda_err_check(err, __FILE__, __LINE__);
+    err = cudaMallocAsync(&d_active_nodes_in_level, n * sizeof(size_t), stream_level[0]); cuda_err_check(err, __FILE__, __LINE__);
+    err = cudaMemsetAsync(d_active_nodes_in_level, 0, n * sizeof(size_t), stream_level[0]); cuda_err_check(err, __FILE__, __LINE__);
+    err = cudaMemcpyAsync(&d_active_nodes_in_level[0], &h_active_nodes_in_first_level, sizeof(size_t), cudaMemcpyHostToDevice, stream_level[0]); cuda_err_check(err, __FILE__, __LINE__);
 
-    if (DEBUG) cout << "Active nodes in level created" << endl;
+    if (DEBUG) cerr << "Active nodes in level created" << endl;
 
     pii **h_levels, **d_levels, *h_firs_level;
     err = cudaMallocHost(&h_levels, n * sizeof(pii*)); cuda_err_check(err, __FILE__, __LINE__);
-    for (size_t i = 0; i < n; i++) {
-        err = cudaMallocAsync(&h_levels[i], h_level_sizes[i] * sizeof(pii), data_stream); cuda_err_check(err, __FILE__, __LINE__);
-    }
-    err = cudaMallocAsync(&d_levels, n * sizeof(pii*), data_stream); cuda_err_check(err, __FILE__, __LINE__);
-    err = cudaMemcpyAsync(d_levels, h_levels, n * sizeof(pii*), cudaMemcpyHostToDevice, data_stream); cuda_err_check(err, __FILE__, __LINE__);
+    err = cudaMallocAsync(&h_levels[0], h_level_sizes[0] * sizeof(pii), stream_level[0]); cuda_err_check(err, __FILE__, __LINE__);
+
+    err = cudaMallocAsync(&d_levels, n * sizeof(pii*), stream_level[0]); cuda_err_check(err, __FILE__, __LINE__);
+    err = cudaMemcpyAsync(d_levels, h_levels, sizeof(pii*), cudaMemcpyHostToDevice, stream_level[0]); cuda_err_check(err, __FILE__, __LINE__);
     
     err = cudaMallocHost(&h_firs_level, h_level_sizes[0] * sizeof(pii)); cuda_err_check(err, __FILE__, __LINE__);
     for (size_t i = 0; i < h_level_sizes[0]; i++) h_firs_level[i].value = i;
-    err = cudaMemcpyAsync(h_levels[0], h_firs_level, h_level_sizes[0] * sizeof(pii), cudaMemcpyHostToDevice, data_stream); cuda_err_check(err, __FILE__, __LINE__);    
+    err = cudaMemcpyAsync(h_levels[0], h_firs_level, h_level_sizes[0] * sizeof(pii), cudaMemcpyHostToDevice, stream_level[0]); cuda_err_check(err, __FILE__, __LINE__);    
 
-    if (DEBUG) cout << "Levels created" << endl;
+    if (DEBUG) cerr << "Levels created" << endl;
 
     int *d_C;
-    err = cudaMallocAsync(&d_C, n * n * sizeof(int), data_stream); cuda_err_check(err, __FILE__, __LINE__);
+    err = cudaMallocAsync(&d_C, n * n * sizeof(int), stream_level[0]); cuda_err_check(err, __FILE__, __LINE__);
     for (size_t i = 0; i < n; i++)
-        err = cudaMemcpyAsync(d_C + i * n, C[i], n * sizeof(int), cudaMemcpyHostToDevice, data_stream); cuda_err_check(err, __FILE__, __LINE__);
+        err = cudaMemcpyAsync(d_C + i * n, C[i], n * sizeof(int), cudaMemcpyHostToDevice, stream_level[0]); cuda_err_check(err, __FILE__, __LINE__);
     
 
-    if (DEBUG) cout << "Constraints transferred" << endl;
+    if (DEBUG) cerr << "Constraints transferred" << endl;
 
     int *d_u;
-    err = cudaMallocAsync(&d_u, n * sizeof(int), data_stream); cuda_err_check(err, __FILE__, __LINE__);
-    err = cudaMemcpyAsync(d_u, u, n * sizeof(int), cudaMemcpyHostToDevice, data_stream); cuda_err_check(err, __FILE__, __LINE__);
+    err = cudaMallocAsync(&d_u, n * sizeof(int), stream_level[0]); cuda_err_check(err, __FILE__, __LINE__);
+    err = cudaMemcpyAsync(d_u, u, n * sizeof(int), cudaMemcpyHostToDevice, stream_level[0]); cuda_err_check(err, __FILE__, __LINE__);
 
-    if (DEBUG) cout << "Upper bounds transferred" << endl;
-
-    err = cudaStreamSynchronize(data_stream); cuda_err_check(err, __FILE__, __LINE__);
-
-    if (DEBUG) cout << "Data transfer completed" << endl; 
+    if (DEBUG) cerr << "Upper bounds transferred" << endl;
 
     constexpr size_t block_size = 256;
     size_t currently_active_nodes = u[0];
 
     for (size_t current_level = 1; current_level < n; current_level++) {
-        if (DEBUG) cout << "Current level: " << current_level << " with " << currently_active_nodes << " active nodes" << endl;
+        if (DEBUG) cerr << "Current level: " << current_level << " with " << currently_active_nodes << " active nodes" << endl;
         int grid_size = (currently_active_nodes + block_size - 1) / block_size;
         if (grid_size == 0) break;
-        kernel_pne_seq<<<grid_size, block_size, 0, kernel_stream>>>(d_C, d_u, n, d_level_sizes, d_active_nodes_in_level, d_levels, current_level);
+        err = cudaMallocAsync(&h_levels[current_level], h_level_sizes[current_level] * sizeof(pii), stream_level[current_level]); cuda_err_check(err, __FILE__, __LINE__);
+        err = cudaMemcpyAsync(d_levels+current_level, h_levels+current_level, sizeof(pii*), cudaMemcpyHostToDevice, stream_level[current_level]); cuda_err_check(err, __FILE__, __LINE__);
+
+        err = cudaEventRecord(wait_event, stream_level[current_level-1]); cuda_err_check(err, __FILE__, __LINE__);
+        err = cudaStreamWaitEvent(stream_level[current_level], wait_event, 0); cuda_err_check(err, __FILE__, __LINE__);
+
+        err = cudaDeviceSynchronize(); cuda_err_check(err, __FILE__, __LINE__);
+
+        kernel_pne_seq<<<grid_size, block_size, 0, stream_level[current_level]>>>(d_C, d_u, n, d_level_sizes, d_active_nodes_in_level, d_levels, current_level);
+
         err = cudaDeviceSynchronize(); cuda_err_check(err, __FILE__, __LINE__);
         err = cudaGetLastError(); cuda_err_check(err, __FILE__, __LINE__);
-        err = cudaMemcpy(&currently_active_nodes, &d_active_nodes_in_level[current_level], sizeof(size_t), cudaMemcpyDeviceToHost); cuda_err_check(err, __FILE__, __LINE__);
-        err = cudaDeviceSynchronize(); cuda_err_check(err, __FILE__, __LINE__);
-        err = cudaGetLastError(); cuda_err_check(err, __FILE__, __LINE__);
+
+        err = cudaMemcpyAsync(&currently_active_nodes, &d_active_nodes_in_level[current_level], sizeof(size_t), cudaMemcpyDeviceToHost, stream_level[current_level]); cuda_err_check(err, __FILE__, __LINE__);
     }
 
-    if (DEBUG) cout << "Kernel execution completed" << " with " << currently_active_nodes << " active nodes" << endl;
-
-    size_t result = currently_active_nodes;
-
-    err = cudaStreamDestroy(data_stream); cuda_err_check(err, __FILE__, __LINE__);
-    err = cudaStreamDestroy(kernel_stream); cuda_err_check(err, __FILE__, __LINE__);
+    err = cudaFreeAsync(d_level_sizes, stream_level[n-1]); cuda_err_check(err, __FILE__, __LINE__);
+    err = cudaFreeAsync(d_active_nodes_in_level, stream_level[n-1]); cuda_err_check(err, __FILE__, __LINE__);
+    for (size_t i = 0; i < n; i++) 
+        err = cudaFreeAsync(h_levels[i], stream_level[n-1]); cuda_err_check(err, __FILE__, __LINE__);
+    
+    err = cudaFreeAsync(d_levels, stream_level[n-1]); cuda_err_check(err, __FILE__, __LINE__);
+    err = cudaFreeAsync(d_C, stream_level[n-1]); cuda_err_check(err, __FILE__, __LINE__);
+    err = cudaFreeAsync(d_u, stream_level[n-1]); cuda_err_check(err, __FILE__, __LINE__);
 
     err = cudaFreeHost(h_level_sizes); cuda_err_check(err, __FILE__, __LINE__);
-    err = cudaFree(d_level_sizes); cuda_err_check(err, __FILE__, __LINE__);
-    err = cudaFree(d_active_nodes_in_level); cuda_err_check(err, __FILE__, __LINE__);
-    for (size_t i = 0; i < n; i++) {
-        err = cudaFree(h_levels[i]); cuda_err_check(err, __FILE__, __LINE__);
-    }
+    err = cudaFreeHost(h_firs_level); cuda_err_check(err, __FILE__, __LINE__);
     err = cudaFreeHost(h_levels); cuda_err_check(err, __FILE__, __LINE__);
-    err = cudaFree(d_levels); cuda_err_check(err, __FILE__, __LINE__);
-    err = cudaFree(d_C); cuda_err_check(err, __FILE__, __LINE__);
-    err = cudaFree(d_u); cuda_err_check(err, __FILE__, __LINE__);
 
-    return result;
+    for (size_t i = 0; i < n; i++){
+        err = cudaStreamSynchronize(stream_level[i]); cuda_err_check(err, __FILE__, __LINE__);
+        err = cudaStreamDestroy(stream_level[i]); cuda_err_check(err, __FILE__, __LINE__);
+    }
+
+    err = cudaFreeHost(stream_level); cuda_err_check(err, __FILE__, __LINE__);
+    
+    err = cudaEventDestroy(wait_event); cuda_err_check(err, __FILE__, __LINE__);
+
+    if (DEBUG) cerr << "Kernel execution completed" << " with " << currently_active_nodes << " active nodes" << endl;
+
+    return currently_active_nodes;
 }
