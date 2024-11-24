@@ -4,7 +4,7 @@ import numpy as np
 def generate_instance(n: int, seed: int):
     random.seed(seed)
     # U
-    U:list = [random.randint(0,10)for _ in range(n)]
+    U:list = [random.randint(0,100)for _ in range(n)]
     # C
     C = np.zeros((n,n), dtype=int)
     for i in range(n):
@@ -29,4 +29,4 @@ def generate_instance(n: int, seed: int):
 
 
 if __name__ == '__main__':
-    generate_instance(5, 43)
+    generate_instance(6, 43)

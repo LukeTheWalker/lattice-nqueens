@@ -1,18 +1,6 @@
 #include <iostream>
 #include <cstring>
-
-struct pii {
-    pii * head;
-    int value;
-};
-
-void print_node(pii * node, size_t n){
-    for (size_t i = 0; i < n; i++){
-        std::cout << node->value << " ";
-        node = node->head;
-    }
-    std::cout << std::endl;
-}
+#include "common/utility.hpp"
 
 size_t pne_seq(int ** C, int * u, int n){
     size_t * level_sizes = new size_t[n];
@@ -25,7 +13,13 @@ size_t pne_seq(int ** C, int * u, int n){
     size_t * active_nodes_in_level = new size_t[n];
     memset(active_nodes_in_level, 0, n*sizeof(size_t));
 
-    // vector<vector<vector<int> > > levels(n);
+    size_t total_allocation_size = 0;
+    for (size_t i = 0; i < n; i++) {
+        total_allocation_size += level_sizes[i] * sizeof(pii);
+    }
+    
+    std::cout << "Peak allocation size: " << level_sizes[n-1] * sizeof(pii) / (1024.0 * 1024.0 * 1024.0) << " GB" << std::endl;
+
     pii ** levels = new pii*[n];
     for (size_t i = 0; i < n; i++){
         levels[i] = new pii[level_sizes[i]];

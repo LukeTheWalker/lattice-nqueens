@@ -5,6 +5,7 @@
 
 #include "parser.hpp"
 #include "impls/sequential_impl.hpp"
+#include "impls/gpu_impl.cuh"
 
 using namespace std;
 
@@ -23,14 +24,17 @@ int main(int argc, char *argv[]){
     cout << "Number of variables = " << n << endl;
 
     auto start = chrono::high_resolution_clock::now();
-
     size_t n_sol_cpu = pne_seq(C, u, n);
-
     auto end = chrono::high_resolution_clock::now();
-    chrono::duration<double, milli> elapsed = end - start;
+    chrono::duration<double, milli> elapsed_cpu = end - start;
 
-    cout << "Size of last level = " << n_sol_cpu << endl;
-    cout << "Elapsed time: " << elapsed.count() << " ms" << endl;
+    start = chrono::high_resolution_clock::now();
+    size_t n_sol_gpu = pne_gpu(C, u, n);
+    end = chrono::high_resolution_clock::now();
+    chrono::duration<double, milli> elapsed_gpu = end - start;
+
+    cout << "Number of solutions (CPU) = " << n_sol_cpu <<  " vs Number of solutions (GPU) = " << n_sol_gpu << endl;
+    cout << "Time (CPU) = " << elapsed_cpu.count() << " ms vs Time (GPU) = " << elapsed_gpu.count() << " ms" << endl;
 
     return 0;
 }
