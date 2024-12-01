@@ -6,7 +6,7 @@
 #include <vector>
 #include <numeric>
 
-#define DEBUG 0
+#define DEBUG 1
 
 using namespace std;
 
@@ -69,7 +69,7 @@ struct bitstring
                 index = i;
             }
         }
-        if (count != 1) throw "Error: there should be only one element set to zero";
+        // if (count != 1) throw "Error";
         return index;
     }
 
@@ -166,15 +166,15 @@ void fix_point_iteration (const Node* node, int ** C, int * u, size_t n, const v
 
                 auto restricted_value = node->bts->get_first_zero(from_restricted, to_restricted) - from_restricted;
 
-                if (DEBUG) cout << "Restricted value: " << restricted_value << endl;
+                if (DEBUG) cout << "Restricted value: " << restricted_value << " for restricted domain " << restricted_domains[i] << endl;
 
                 for (size_t j = 0; j < n_unrestricted_domains; j++){
-                   if (C[restricted_domains[i]][unrestricted_domains[j]] == 1){
-                        if (DEBUG) cout << "Checking unrestricted domain: " << unrestricted_domains[j] << endl;
-                
+                   if (C[restricted_domains[i]][unrestricted_domains[j]] == 1){                
                         auto start_unrestricted = unrestricted_domains[j] == 0 ? 0 : scan_of_domains[unrestricted_domains[j]-1];
 
                         if (start_unrestricted + restricted_value < scan_of_domains[unrestricted_domains[j]] && !node->bts->operator[](start_unrestricted + restricted_value)){
+                            if (DEBUG) cout << "Setting bit at position: " << start_unrestricted + restricted_value << endl;
+
                             node->bts->set(start_unrestricted + restricted_value);
 
                             changed = true;
@@ -231,6 +231,10 @@ size_t pne_seq_fix(int ** C, int * u, int n){
     auto total_size = scan_of_domains[n-1];
 
     Node root(n, total_size);
+
+    for (size_t i = 0; i < n; i++)
+        if (u[i] == 1)
+            root.domain_restriction_status->set(i);
 
     std::stack<Node*> pool;
     pool.push(&root);
