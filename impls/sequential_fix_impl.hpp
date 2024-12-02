@@ -6,7 +6,7 @@
 #include <vector>
 #include <numeric>
 
-#define DEBUG 1
+#define DEBUG 0
 
 using namespace std;
 
@@ -161,12 +161,12 @@ void fix_point_iteration (const Node* node, int ** C, int * u, size_t n, const v
 
             for(size_t i = 0; i < n_restricted_domains; i++){
 
-                auto from_restricted = i == 0 ? 0 : scan_of_domains[i-1];
-                auto to_restricted = scan_of_domains[i];
+                auto from_restricted = restricted_domains[i] == 0 ? 0 : scan_of_domains[restricted_domains[i]-1];
+                auto to_restricted = scan_of_domains[restricted_domains[i]];
 
                 auto restricted_value = node->bts->get_first_zero(from_restricted, to_restricted) - from_restricted;
 
-                if (DEBUG) cout << "Restricted value: " << restricted_value << " for restricted domain " << restricted_domains[i] << endl;
+                if (DEBUG) cout << "Restricted value: " << restricted_value << " for restricted domain " << restricted_domains[i] << " obtained with from: " << from_restricted << " and to restricted " << to_restricted << endl;
 
                 for (size_t j = 0; j < n_unrestricted_domains; j++){
                    if (C[restricted_domains[i]][unrestricted_domains[j]] == 1){                
@@ -227,6 +227,10 @@ size_t pne_seq_fix(int ** C, int * u, int n){
     vector<size_t> scan_of_domains;
     scan_of_domains.push_back(u[0]);
     for (size_t i = 1; i < n; i++) scan_of_domains.push_back(scan_of_domains[i-1] + u[i]);
+
+    cout << "Scan of domains: " << endl;
+    for (size_t i = 0; i < n; i++) cout << scan_of_domains[i] << " ";
+    cout << endl;
 
     auto total_size = scan_of_domains[n-1];
 
