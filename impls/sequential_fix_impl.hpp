@@ -45,7 +45,7 @@ struct bitstring
         memset(data, 0, size);
     }
 
-    size_t count_zeros(size_t from, size_t to) const {
+    inline size_t count_zeros(size_t from, size_t to) const {
         size_t count = 0;
         for (size_t i = from; i < to; i++)
         {
@@ -59,7 +59,7 @@ struct bitstring
     }
 
     // get first element set to zero, check if there is only one, otherwise throw an error
-    size_t get_first_zero(size_t from, size_t to) const {
+    inline size_t get_first_zero(size_t from, size_t to) const {
         size_t count = 0;
         size_t index = 0;
         for (size_t i = from; i < to; i++)
@@ -79,19 +79,27 @@ struct Node {
     bitstring * domain_restriction_status;
     bitstring * bts;
 
+    // bitstring * seen_domains;
+    size_t * singleton_values;
+
     size_t n_domains;
     size_t total_domain_size;
     Node (size_t n_domains, size_t total_domain_size) : n_domains(n_domains), total_domain_size(total_domain_size) {
         domain_restriction_status = new bitstring(n_domains);
         bts = new bitstring(total_domain_size);
+        // seen_domains = new bitstring(n_domains);
+        singleton_values = new size_t[n_domains];
+        memset(singleton_values, 0xFF, n_domains*sizeof(size_t));
     }
 
     ~Node() {
         delete domain_restriction_status;
         delete bts;
+        // delete seen_domains;
+        delete[] singleton_values;
     }
 
-    size_t get_restricted_domain(size_t * restricted_domains, size_t n) const {
+    inline size_t get_restricted_domain(size_t * restricted_domains, size_t n) const {
         size_t count = 0;
         for (size_t i = 0; i < n; i++)
         {   
@@ -161,10 +169,12 @@ void fix_point_iteration (const Node* node, int ** C, int * u, size_t n, const v
 
             for(size_t i = 0; i < n_restricted_domains; i++){
 
+                // if (node->seen_domains->operator[] (restricted_domains[i]) == 1) continue;
+
                 auto from_restricted = restricted_domains[i] == 0 ? 0 : scan_of_domains[restricted_domains[i]-1];
                 auto to_restricted = scan_of_domains[restricted_domains[i]];
 
-                auto restricted_value = node->bts->get_first_zero(from_restricted, to_restricted) - from_restricted;
+                auto restricted_value = node->singleton_values[restricted_domains[i]];
 
                 if (DEBUG) cout << "Restricted value: " << restricted_value << " for restricted domain " << restricted_domains[i] << " obtained with from: " << from_restricted << " and to restricted " << to_restricted << endl;
 
@@ -181,10 +191,17 @@ void fix_point_iteration (const Node* node, int ** C, int * u, size_t n, const v
 
                             auto number_of_zeros = node->bts->count_zeros(start_unrestricted, scan_of_domains[unrestricted_domains[j]]);
 
-                            if (number_of_zeros == 1) node->domain_restriction_status->set(unrestricted_domains[j]);
+                            if (number_of_zeros == 1) {
+                                auto end_unrestricted = scan_of_domains[unrestricted_domains[j]];
+                                node->domain_restriction_status->set(unrestricted_domains[j]);
+                                node->singleton_values[unrestricted_domains[j]] = node->bts->get_first_zero(start_unrestricted, end_unrestricted) - start_unrestricted;
+                            }
                         }
                     }
                 }
+
+                // node->seen_domains->set(restricted_domains[i]);
+
             }
         }
     }
@@ -207,9 +224,11 @@ void fix_point_iteration (const Node* node, int ** C, int * u, size_t n, const v
                     node->domain_restriction_status->copy_to(new_node->domain_restriction_status, n);
                     new_node->domain_restriction_status->set(i);
 
-                    for (size_t k = from; k < to; k++)
-                        if (k != j)
-                            new_node->bts->set(k);
+                    // new_node->seen_domains->copy_to(new_node->seen_domains, n);
+                    // new_node->seen_domains->set(i);
+
+                    memcpy(new_node->singleton_values, node->singleton_values, n*sizeof(size_t));
+                    new_node->singleton_values[i] = j - from;
 
                     if (DEBUG) cout << "New node: \n" << *new_node << endl;
 
@@ -236,9 +255,12 @@ size_t pne_seq_fix(int ** C, int * u, int n){
 
     Node root(n, total_size);
 
-    for (size_t i = 0; i < n; i++)
-        if (u[i] == 1)
+    for (size_t i = 0; i < n; i++){
+        if (u[i] == 1){
             root.domain_restriction_status->set(i);
+            root.singleton_values[i] = 0;
+        }
+    }
 
     std::stack<Node*> pool;
     pool.push(&root);
@@ -258,66 +280,3 @@ size_t pne_seq_fix(int ** C, int * u, int n){
 
     return num_sol;
 }
-
-
-/*
-int main(int argc, char *argv[])
-{
-    auto input_file = argv[1];
-    Data data;
-    if (!data.read_input(input_file))
-    {
-        cerr << "Error reading input file" << endl;
-        exit(1);
-    }
-
-    auto C = data.get_C();
-    auto u = data.get_u();
-    auto n = data.get_n();
-
-    for (size_t i = 0; i < n; i++) u[i]++;
-
-    // scan of the domains (used to compute the index of the queens)
-    vector<size_t> scan_of_domains;
-    scan_of_domains.push_back(u[0]);
-    for (size_t i = 1; i < n; i++) scan_of_domains.push_back(scan_of_domains[i-1] + u[i]);
-
-    cout << "Scan of domains: ";
-    for (size_t i = 0; i < scan_of_domains.size(); i++) {
-        cout << scan_of_domains[i] << " ";
-    }
-    cout << endl;
-
-    auto total_size = scan_of_domains[n-1];
-
-    Node root(n, total_size);
-
-    // initialization of the pool of nodes (stack -> DFS exploration order)
-    std::stack<Node*> pool;
-    pool.push(&root);
-
-    auto start = std::chrono::steady_clock::now();
-
-    while (pool.size() != 0)
-    { 
-        auto top = pool.top();
-        pool.pop();
-
-        if (DEBUG) cout << "Popped new element from the stack --------------------------------------" << endl;
-        if (DEBUG) cout << *top << endl;
-
-        // fix point iteration
-        fix_point_iteration(top, C, u, n, scan_of_domains, pool);
-        if (DEBUG) cout << "------------------------------------------------------------------------" << endl;
-    }
-
-    auto end = std::chrono::steady_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
-    auto milliseconds = duration.count() / 1000.0;
-
-    cout << "Number of solutions: " << num_sol << endl;
-    cout << "Time: " << milliseconds << "ms" << endl;
-
-    return 0;
-}
-*/
