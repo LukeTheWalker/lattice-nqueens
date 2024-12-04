@@ -25,23 +25,23 @@ struct bitstring
         delete[] data;
     }
 
-    bool operator[](size_t i) const {
+    inline bool operator[](size_t i) const {
         return data[i / 8] & (1 << (i % 8));
     }
 
-    void set(size_t i) {
+    inline void set(size_t i) {
         data[i / 8] |= (1 << (i % 8));
     }
 
-    void unset(size_t i) {
+    inline void unset(size_t i) {
         data[i / 8] &= ~(1 << (i % 8));
     }
 
-    void flip(size_t i) {
+    inline void flip(size_t i) {
         data[i / 8] ^= (1 << (i % 8));
     }
 
-    void clear(size_t size) {
+    inline void clear(size_t size) {
         memset(data, 0, size);
     }
 
@@ -54,7 +54,7 @@ struct bitstring
         return count;
     }
 
-    void copy_to(bitstring * other, size_t size) {
+    inline void copy_to(bitstring * other, size_t size) {
         memcpy(other->data, data, size);
     }
 
@@ -79,7 +79,7 @@ struct Node {
     bitstring * domain_restriction_status;
     bitstring * bts;
 
-    // bitstring * seen_domains;
+    bitstring * seen_domains;
     size_t * singleton_values;
 
     size_t n_domains;
@@ -87,15 +87,14 @@ struct Node {
     Node (size_t n_domains, size_t total_domain_size) : n_domains(n_domains), total_domain_size(total_domain_size) {
         domain_restriction_status = new bitstring(n_domains);
         bts = new bitstring(total_domain_size);
-        // seen_domains = new bitstring(n_domains);
+        seen_domains = new bitstring(n_domains);
         singleton_values = new size_t[n_domains];
-        memset(singleton_values, 0xFF, n_domains*sizeof(size_t));
     }
 
     ~Node() {
         delete domain_restriction_status;
         delete bts;
-        // delete seen_domains;
+        delete seen_domains;
         delete[] singleton_values;
     }
 
@@ -169,7 +168,7 @@ void fix_point_iteration (const Node* node, int ** C, int * u, size_t n, const v
 
             for(size_t i = 0; i < n_restricted_domains; i++){
 
-                // if (node->seen_domains->operator[] (restricted_domains[i]) == 1) continue;
+                if (node->seen_domains->operator[] (restricted_domains[i])) continue;
 
                 auto from_restricted = restricted_domains[i] == 0 ? 0 : scan_of_domains[restricted_domains[i]-1];
                 auto to_restricted = scan_of_domains[restricted_domains[i]];
@@ -196,12 +195,14 @@ void fix_point_iteration (const Node* node, int ** C, int * u, size_t n, const v
                                 node->domain_restriction_status->set(unrestricted_domains[j]);
                                 node->singleton_values[unrestricted_domains[j]] = node->bts->get_first_zero(start_unrestricted, end_unrestricted) - start_unrestricted;
                             }
+                            else if (number_of_zeros == 0) {
+                                if (DEBUG) cout << "No solution found" << endl;
+                                return;
+                            }
                         }
                     }
                 }
-
-                // node->seen_domains->set(restricted_domains[i]);
-
+                node->seen_domains->set(restricted_domains[i]);
             }
         }
     }
@@ -221,11 +222,11 @@ void fix_point_iteration (const Node* node, int ** C, int * u, size_t n, const v
                 if (!node->bts->operator[](j)){
                     auto new_node = new Node(n, total_size);
                     node->bts->copy_to(new_node->bts, total_size);
+                    
                     node->domain_restriction_status->copy_to(new_node->domain_restriction_status, n);
                     new_node->domain_restriction_status->set(i);
 
-                    // new_node->seen_domains->copy_to(new_node->seen_domains, n);
-                    // new_node->seen_domains->set(i);
+                    node->seen_domains->copy_to(new_node->seen_domains, n);
 
                     memcpy(new_node->singleton_values, node->singleton_values, n*sizeof(size_t));
                     new_node->singleton_values[i] = j - from;
