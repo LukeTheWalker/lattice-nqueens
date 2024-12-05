@@ -1,20 +1,13 @@
 #include <iostream>
 #include <cstring>
 #include <cuda_runtime.h>
-#include "common/utility.hpp"
 
-#define DEBUG 0
+#include "common/utility.hpp"
+#include "common/utility.cuh"
+
+const bool DEBUG = false;
 
 using namespace std;
-
-void cuda_err_check (cudaError_t err, const char *file, int line)
-{
-    if (err != cudaSuccess)
-    {
-        fprintf (stderr, "CUDA error: %s (%s:%d)\n", cudaGetErrorString (err), file, line);
-        exit (EXIT_FAILURE);
-    }
-}
 
 __global__ void kernel_pne_gpu(int *C, int *u, int n, size_t *level_sizes, size_t *active_nodes_in_level, pii **levels, size_t current_level) {
     int father = blockIdx.x * blockDim.x + threadIdx.x;
